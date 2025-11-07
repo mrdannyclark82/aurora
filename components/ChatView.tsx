@@ -32,7 +32,7 @@ export const ChatView: React.FC = () => {
     const { isPlaying, speak, cancel } = useTextToSpeech();
     const { isListening, transcript, toggleListening, setTranscript } = useSpeechRecognition();
     const { toggleMobileNav } = useMobileNav();
-    
+
     const messagesEndRef = useRef<HTMLDivElement>(null);
     const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -41,7 +41,7 @@ export const ChatView: React.FC = () => {
             setInput(transcript);
         }
     }, [transcript]);
-    
+
     useEffect(() => {
         // Ensure activePersona is always valid, even if the list changes
         if (!personas.find(p => p.id === activePersona.id)) {
@@ -94,33 +94,33 @@ export const ChatView: React.FC = () => {
         };
         const currentHistory = [...messages];
         setMessages(prev => [...prev, userMessage]);
-        
+
         setIsLoading(true);
         setInput('');
         setImage(null);
         setTranscript('');
         if (isListening) toggleListening();
         if (isPlaying) cancel();
-        
+
         try {
             const messageParts: any[] = [];
             if (input.trim()) {
                 messageParts.push({ text: input });
             }
             if (image) {
-                messageParts.push({ inlineData: { data: image.data, mimeType: image.mimeType }});
+                messageParts.push({ inlineData: { data: image.data, mimeType: image.mimeType } });
             }
 
             if (useStreaming) {
                 const response = await generateChatResponseStream(currentHistory, { parts: messageParts }, activePersona);
-                
+
                 if (!response.body) throw new Error("Response has no body");
 
                 const reader = response.body.getReader();
                 const decoder = new TextDecoder();
                 let fullResponse = '';
                 let responseMessage: ChatMessage | null = null;
-                
+
                 while (true) {
                     const { done, value } = await reader.read();
                     if (done) break;
@@ -163,7 +163,7 @@ export const ChatView: React.FC = () => {
             setIsLoading(false);
         }
     };
-    
+
     const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
         const file = e.target.files?.[0];
         if (file) {
@@ -224,11 +224,11 @@ export const ChatView: React.FC = () => {
                     </div>
                 </div>
                 <div className="flex items-center gap-2">
-                    <button onClick={handleShare} title="Share conversation" className="p-2 rounded-md hover:bg-primary"><ShareIcon className="w-5 h-5"/></button>
-                    <button onClick={handleExport} title="Export as Markdown" className="p-2 rounded-md hover:bg-primary"><ExportIcon className="w-5 h-5"/></button>
+                    <button onClick={handleShare} title="Share conversation" className="p-2 rounded-md hover:bg-primary"><ShareIcon className="w-5 h-5" /></button>
+                    <button onClick={handleExport} title="Export as Markdown" className="p-2 rounded-md hover:bg-primary"><ExportIcon className="w-5 h-5" /></button>
                 </div>
             </header>
-            
+
             <div className="p-2 bg-primary border-b border-border flex items-center gap-2 overflow-x-auto">
                 <span className="text-sm font-medium px-2 shrink-0">Persona:</span>
                 {personas.map(p => (
@@ -260,10 +260,10 @@ export const ChatView: React.FC = () => {
                     </div>
                 ))}
                 {isLoading && (
-                     <div className="flex items-start gap-3">
+                    <div className="flex items-start gap-3">
                         <span className="text-2xl pt-1">{activePersona.avatar}</span>
                         <div className="p-3 rounded-2xl max-w-xl bg-primary rounded-bl-none flex items-center">
-                           <SpinnerIcon className="w-5 h-5 animate-spin" />
+                            <SpinnerIcon className="w-5 h-5 animate-spin" />
                         </div>
                     </div>
                 )}
@@ -272,9 +272,9 @@ export const ChatView: React.FC = () => {
 
             <footer className="p-4 border-t border-border bg-secondary">
                 <div className="max-w-4xl mx-auto">
-                     {image && (
+                    {image && (
                         <div className="relative w-24 h-24 mb-2 p-1 border border-border rounded-md">
-                            <img src={image.preview} alt="upload preview" className="w-full h-full object-cover rounded-sm"/>
+                            <img src={image.preview} alt="upload preview" className="w-full h-full object-cover rounded-sm" />
                             <button onClick={() => setImage(null)} className="absolute -top-2 -right-2 bg-red-500 text-white rounded-full w-5 h-5 flex items-center justify-center text-xs">X</button>
                         </div>
                     )}
@@ -289,14 +289,14 @@ export const ChatView: React.FC = () => {
                             disabled={isLoading}
                         />
                         <div className="absolute right-2 flex items-center gap-1">
-                            <input type="file" ref={fileInputRef} onChange={handleFileChange} accept="image/*" className="hidden"/>
-                            <button onClick={() => fileInputRef.current?.click()} className="p-2 rounded-md hover:bg-secondary" title="Attach Image"><PaperclipIcon className="w-5 h-5"/></button>
-                            <button onClick={toggleListening} className={`p-2 rounded-md hover:bg-secondary ${isListening ? 'text-red-500' : ''}`} title={isListening ? 'Stop listening' : 'Use microphone'}><MicIcon className="w-5 h-5"/></button>
-                             <button onClick={isPlaying ? cancel : () => messages.length > 0 && speak(messages[messages.length - 1].text || '')} 
-                                className="p-2 rounded-md hover:bg-secondary" 
+                            <input type="file" ref={fileInputRef} onChange={handleFileChange} accept="image/*" className="hidden" />
+                            <button onClick={() => fileInputRef.current?.click()} className="p-2 rounded-md hover:bg-secondary" title="Attach Image"><PaperclipIcon className="w-5 h-5" /></button>
+                            <button onClick={toggleListening} className={`p-2 rounded-md hover:bg-secondary ${isListening ? 'text-red-500' : ''}`} title={isListening ? 'Stop listening' : 'Use microphone'}><MicIcon className="w-5 h-5" /></button>
+                            <button onClick={isPlaying ? cancel : () => messages.length > 0 && speak(messages[messages.length - 1].text || '')}
+                                className="p-2 rounded-md hover:bg-secondary"
                                 title={isPlaying ? 'Stop speaking' : 'Speak last message'}>
-                                {isPlaying ? <StopIcon className="w-5 h-5"/> : <SpeakerIcon className="w-5 h-5"/>}
-                             </button>
+                                {isPlaying ? <StopIcon className="w-5 h-5" /> : <SpeakerIcon className="w-5 h-5" />}
+                            </button>
                         </div>
                     </div>
                 </div>

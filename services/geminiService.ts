@@ -40,7 +40,7 @@ const proxyFetch = async (action: string, params: object) => {
         if (!contentType.includes('text/event-stream') && !contentType.includes('application/octet-stream')) {
             // Non-streaming response — read the body (safe: already consumed in non-stream path) and include it in the error.
             const text = await response.text();
-            throw new Error(`Expected streaming response for ${action} but received non-stream content-type: ${contentType}. Body: ${text?.slice(0,1000)}`);
+            throw new Error(`Expected streaming response for ${action} but received non-stream content-type: ${contentType}. Body: ${text?.slice(0, 1000)}`);
         }
         return response;
     }
@@ -87,18 +87,18 @@ export const fetchVideoBlob = async (downloadLink: string): Promise<Blob> => {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ service: 'gemini', action: 'fetchVideo', downloadLink }),
     });
-     if (!response.ok) throw new Error('Failed to fetch video via proxy');
+    if (!response.ok) throw new Error('Failed to fetch video via proxy');
     return response.blob();
 };
 
 export const generateChatResponseStream = (
-    chatHistory: ChatMessage[], 
+    chatHistory: ChatMessage[],
     newMessage: { parts: Part[] },
     persona: Persona,
     memory?: Memory[],
     tools?: Tool[]
 ): Promise<Response> => {
-     return proxyFetch('generateChatStream', { chatHistory, newMessage, persona, memory, tools });
+    return proxyFetch('generateChatStream', { chatHistory, newMessage, persona, memory, tools });
 };
 
 // Fix: Add a non-streaming chat response function for use in ChatView.

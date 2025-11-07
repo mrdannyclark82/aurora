@@ -19,7 +19,7 @@ self.addEventListener('activate', (event) => {
 // This listener ensures that if a real push service were used, it would be handled correctly.
 self.addEventListener('push', (event) => {
   console.log('Service Worker: Push Received.');
-  
+
   // The data sent from a push service would be in event.data
   let data = {
     title: 'Aura Reminder',

@@ -48,7 +48,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         setUser(null);
         setAccessToken(null);
     }, []);
-    
+
     useEffect(() => {
         const script = document.createElement('script');
         script.src = 'https://accounts.google.com/gsi/client';
@@ -65,7 +65,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     useEffect(() => {
         if (isGsiLoaded) {
             try {
-                 tokenClientRef.current = google.accounts.oauth2.initTokenClient({
+                tokenClientRef.current = google.accounts.oauth2.initTokenClient({
                     client_id: GOOGLE_CLIENT_ID,
                     scope: GOOGLE_API_SCOPES,
                     callback: (tokenResponse: any) => {
@@ -76,26 +76,26 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
                                     'Authorization': `Bearer ${tokenResponse.access_token}`
                                 }
                             })
-                            .then(async (res) => {
-                                // Safely parse the response body (may be empty or malformed)
-                                try {
-                                    const text = await res.text();
-                                    if (!text) throw new Error('Empty response when fetching user info');
-                                    const userInfo = JSON.parse(text) as { name: string; email: string; picture: string; };
-                                    setUser({
-                                        name: userInfo.name,
-                                        email: userInfo.email,
-                                        picture: userInfo.picture,
-                                    });
-                                } catch (err) {
-                                    console.error("Error parsing user info response:", err);
+                                .then(async (res) => {
+                                    // Safely parse the response body (may be empty or malformed)
+                                    try {
+                                        const text = await res.text();
+                                        if (!text) throw new Error('Empty response when fetching user info');
+                                        const userInfo = JSON.parse(text) as { name: string; email: string; picture: string; };
+                                        setUser({
+                                            name: userInfo.name,
+                                            email: userInfo.email,
+                                            picture: userInfo.picture,
+                                        });
+                                    } catch (err) {
+                                        console.error("Error parsing user info response:", err);
+                                        setError("Failed to fetch your Google user information.");
+                                    }
+                                })
+                                .catch(err => {
+                                    console.error("Error fetching user info:", err);
                                     setError("Failed to fetch your Google user information.");
-                                }
-                            })
-                            .catch(err => {
-                                console.error("Error fetching user info:", err);
-                                setError("Failed to fetch your Google user information.");
-                            });
+                                });
                         }
                     },
                 });
