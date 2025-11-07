@@ -36,9 +36,12 @@ export const SharedChatView: React.FC<SharedChatViewProps> = ({ messages }) => {
                                         className="rounded-lg mb-2 max-w-xs max-h-64"
                                     />
                                 )}
-                                <ReactMarkdown remarkPlugins={[remarkGfm]} className="markdown-content">
-                                    {msg.text || ''}
-                                </ReactMarkdown>
+                                {/* Fix: Wrap ReactMarkdown in a div to apply className, resolving a TypeScript type error where className was not a recognized prop. */}
+                                <div className="markdown-content">
+                                    <ReactMarkdown remarkPlugins={[remarkGfm]}>
+                                        {msg.text || ''}
+                                    </ReactMarkdown>
+                                </div>
                             </div>
                         </div>
                     ))}

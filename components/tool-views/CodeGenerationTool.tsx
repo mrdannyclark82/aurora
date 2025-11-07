@@ -22,7 +22,7 @@ export const CodeGenerationTool: React.FC = () => {
         try {
             const fullPrompt = `You are a code generation expert. Generate only the code for the following request, without any extra explanation or introductory text. The user wants: "${prompt}". Provide the response inside a markdown code block.`;
             const result = await generateText(fullPrompt, 'gemini-2.5-pro');
-            setCode(result);
+            setCode(result.text);
         } catch (error: any) {
             setError(error.message || 'Failed to generate code.');
         } finally {

@@ -19,8 +19,8 @@ root.render(
     <ErrorProvider>
       <AuthProvider>
         <ChangelogProvider>
-          <SettingsProvider>
-            <WorkspaceProvider>
+          <WorkspaceProvider>
+            <SettingsProvider>
               <CommandPaletteProvider>
                 <MobileNavProvider>
                   <NotificationProvider>
@@ -28,8 +28,8 @@ root.render(
                   </NotificationProvider>
                 </MobileNavProvider>
               </CommandPaletteProvider>
-            </WorkspaceProvider>
-          </SettingsProvider>
+            </SettingsProvider>
+          </WorkspaceProvider>
         </ChangelogProvider>
       </AuthProvider>
     </ErrorProvider>

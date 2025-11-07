@@ -37,7 +37,7 @@ export const TextUtilitiesTool: React.FC = () => {
         try {
             const prompt = utilityPrompts[activeUtility](inputText);
             const result = await generateText(prompt);
-            setOutputText(result);
+            setOutputText(result.text);
         } catch (error: any) {
             setError(error.message || 'Failed to process text.');
         } finally {

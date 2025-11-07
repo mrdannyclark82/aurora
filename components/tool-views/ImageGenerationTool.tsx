@@ -19,7 +19,7 @@ export const ImageGenerationTool: React.FC = () => {
         setImageUrl(null);
         try {
             const result = await generateImage(prompt, aspectRatio);
-            setImageUrl(result);
+            setImageUrl(result.imageUrl);
         } catch (error: any) {
             setError(error.message || 'Failed to generate image.');
         } finally {
