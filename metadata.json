@@ -1,0 +1,9 @@
+{
+  "name": "Aura - Predictive Life Assistant",
+  "description": "An AI-powered adaptive assistant that integrates chat, search, local information, and real-time voice conversations to help you navigate your day. It's designed to be an extensible platform for future AI capabilities.",
+  "requestFramePermissions": [
+    "microphone",
+    "geolocation",
+    "camera"
+  ]
+}
