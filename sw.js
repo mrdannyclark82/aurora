@@ -21,11 +21,23 @@ self.addEventListener('push', (event) => {
   console.log('Service Worker: Push Received.');
   
   // The data sent from a push service would be in event.data
-  const data = event.data ? event.data.json() : {
+  let data = {
     title: 'Aura Reminder',
     body: 'You have an upcoming event.',
     tag: 'default'
   };
+  if (event.data) {
+    try {
+      // Some push payloads may be empty or malformed; guard against JSON errors
+      const parsed = event.data.json();
+      if (parsed && typeof parsed === 'object') {
+        data = parsed;
+      }
+    } catch (err) {
+      // Log and continue with a safe default payload
+      console.error('Service Worker: Failed to parse push event data as JSON:', err);
+    }
+  }
 
   event.waitUntil(
     self.registration.showNotification(data.title, {

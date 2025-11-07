@@ -12,11 +12,25 @@ const googleApiProxyFetch = async (action: string, accessToken: string, params: 
         }),
     });
 
+    // Safely parse JSON body. Some proxy responses may contain an empty body.
+    const safeParse = async (res: Response) => {
+        try {
+            const text = await res.text();
+            if (!text) return null;
+            return JSON.parse(text);
+        } catch (err) {
+            // Re-throw a clearer error for debugging
+            throw new Error(`Failed to parse JSON response for ${action}: ${String(err)}`);
+        }
+    };
+
     if (!response.ok) {
-        const error = await response.json();
-        throw new Error(error.message || `An error occurred with the Google API proxy for action: ${action}.`);
+        const error = await safeParse(response);
+        const message = error && (error.message || error.error || error.toString()) ? (error.message || error.error || String(error)) : `An error occurred with the Google API proxy for action: ${action}.`;
+        throw new Error(message);
     }
-    return response.json();
+
+    return safeParse(response);
 };
 
 

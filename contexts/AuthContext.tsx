@@ -6,7 +6,7 @@ import { useError } from './ErrorContext';
 declare const google: any;
 
 // IMPORTANT: Replace with your actual Google Client ID
-const GOOGLE_CLIENT_ID = 'YOUR_GOOGLE_CLIENT_ID.apps.googleusercontent.com';
+const GOOGLE_CLIENT_ID = '472743349101-ilgktbq3a2il4lvucntgi1hshabpbj7h.apps.googleusercontent.com';
 
 const GOOGLE_API_SCOPES = [
     'https://www.googleapis.com/auth/userinfo.profile',
@@ -76,13 +76,21 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
                                     'Authorization': `Bearer ${tokenResponse.access_token}`
                                 }
                             })
-                            .then(res => res.json())
-                            .then((userInfo: { name: string; email: string; picture: string; }) => {
-                                setUser({
-                                    name: userInfo.name,
-                                    email: userInfo.email,
-                                    picture: userInfo.picture,
-                                });
+                            .then(async (res) => {
+                                // Safely parse the response body (may be empty or malformed)
+                                try {
+                                    const text = await res.text();
+                                    if (!text) throw new Error('Empty response when fetching user info');
+                                    const userInfo = JSON.parse(text) as { name: string; email: string; picture: string; };
+                                    setUser({
+                                        name: userInfo.name,
+                                        email: userInfo.email,
+                                        picture: userInfo.picture,
+                                    });
+                                } catch (err) {
+                                    console.error("Error parsing user info response:", err);
+                                    setError("Failed to fetch your Google user information.");
+                                }
                             })
                             .catch(err => {
                                 console.error("Error fetching user info:", err);
@@ -94,9 +102,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
             } catch (error) {
                 console.error("Error initializing Google token client", error);
                 setError("Could not initialize Google Sign-In.");
-                if (GOOGLE_CLIENT_ID === 'YOUR_GOOGLE_CLIENT_ID.apps.googleusercontent.com') {
-                    console.warn("Please replace 'YOUR_GOOGLE_CLIENT_ID.apps.googleusercontent.com' with your actual Google Client ID in contexts/AuthContext.tsx");
-                }
             }
         }
     }, [isGsiLoaded, setError]);

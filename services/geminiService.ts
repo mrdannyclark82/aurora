@@ -17,17 +17,35 @@ const proxyFetch = async (action: string, params: object) => {
         }),
     });
 
+    // Helper to safely parse JSON bodies (handles empty responses)
+    const safeParse = async (res: Response) => {
+        try {
+            const text = await res.text();
+            if (!text) return null;
+            return JSON.parse(text);
+        } catch (err) {
+            throw new Error(`Failed to parse JSON response for ${action}: ${String(err)}`);
+        }
+    };
+
     if (!response.ok) {
-        const error = await response.json();
-        throw new Error(error.message || `An error occurred with the Gemini API proxy for action: ${action}.`);
+        const error = await safeParse(response);
+        const message = error && (error.message || error.error || error.toString()) ? (error.message || error.error || String(error)) : `An error occurred with the Gemini API proxy for action: ${action}.`;
+        throw new Error(message);
     }
-    
-    // For streaming responses, we return the raw response to be handled by the caller
+
+    // For streaming responses, ensure we actually received an event-stream; otherwise read body and throw a clearer error.
     if (action.includes('Stream')) {
+        const contentType = response.headers.get('content-type') || '';
+        if (!contentType.includes('text/event-stream') && !contentType.includes('application/octet-stream')) {
+            // Non-streaming response — read the body (safe: already consumed in non-stream path) and include it in the error.
+            const text = await response.text();
+            throw new Error(`Expected streaming response for ${action} but received non-stream content-type: ${contentType}. Body: ${text?.slice(0,1000)}`);
+        }
         return response;
     }
 
-    return response.json();
+    return safeParse(response);
 };
 
 
@@ -98,9 +116,9 @@ export const generateContentWithTools = (contents: Content[], tools: Tool[]): Pr
     return proxyFetch('generateWithTools', { contents, tools });
 };
 
-export const runAgent = (goal: string, accessToken: string): Promise<any> => {
+export const runAgent = async (goal: string, accessToken: string): Promise<any> => {
     // We pass the access token here because the agent needs it to execute tools like reading email
-     return fetch('/api/proxy', {
+    const res = await fetch('/api/proxy', {
         method: 'POST',
         headers: {
             'Content-Type': 'application/json',
@@ -111,5 +129,13 @@ export const runAgent = (goal: string, accessToken: string): Promise<any> => {
             action: 'runAgent',
             goal
         }),
-    }).then(res => res.json());
+    });
+
+    try {
+        const text = await res.text();
+        if (!text) return null;
+        return JSON.parse(text);
+    } catch (err) {
+        throw new Error(`Failed to parse runAgent response: ${String(err)}`);
+    }
 };

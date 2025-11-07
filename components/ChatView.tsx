@@ -51,10 +51,30 @@ export const ChatView: React.FC = () => {
 
     useEffect(() => {
         if (!activePersona) return;
-        
-        const savedHistory = localStorage.getItem(`chatHistory_${activePersona.id}`);
-        const initialMessages = savedHistory ? JSON.parse(savedHistory) : [];
-        setMessages(initialMessages);
+
+        const key = `chatHistory_${activePersona.id}`;
+        const savedHistory = localStorage.getItem(key);
+        if (!savedHistory) {
+            setMessages([]);
+            return;
+        }
+
+        try {
+            const initialMessages = JSON.parse(savedHistory);
+            if (Array.isArray(initialMessages)) {
+                setMessages(initialMessages);
+            } else {
+                // Corrupted or unexpected shape - clear and fallback
+                console.warn(`Saved chat history for ${key} is not an array. Clearing corrupted data.`);
+                localStorage.removeItem(key);
+                setMessages([]);
+            }
+        } catch (err) {
+            console.error(`Failed to parse saved chat history for ${key}:`, err);
+            // Remove the corrupted stored value to avoid repeated failures
+            try { localStorage.removeItem(key); } catch (e) { /* ignore */ }
+            setMessages([]);
+        }
     }, [activePersona]);
 
     useEffect(() => {
