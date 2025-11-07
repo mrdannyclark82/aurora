@@ -15,6 +15,7 @@ import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 // Fix: Import the missing EditIcon component.
 import { EditIcon } from './icons/EditIcon';
+import { FunctionDeclaration, Tool, Type } from '@google/genai';
 
 const AgentForm: React.FC<{ agent?: Agent, onSave: (agent: Agent) => void, onCancel: () => void }> = ({ agent, onSave, onCancel }) => {
     const [name, setName] = useState(agent?.name || '');
@@ -61,6 +62,19 @@ const AgentForm: React.FC<{ agent?: Agent, onSave: (agent: Agent) => void, onCan
     );
 };
 
+const search_youtube_tool: FunctionDeclaration = {
+  name: 'search_youtube',
+  description: "Searches YouTube for videos matching a query.",
+  parameters: {
+    type: Type.OBJECT,
+    properties: {
+      query: { type: Type.STRING, description: 'The search term to find videos.' },
+    },
+    required: ['query'],
+  },
+};
+
+const tools: Tool[] = [{ functionDeclarations: [search_youtube_tool] }];
 
 export const AgentsView: React.FC = () => {
     const { toggleMobileNav } = useMobileNav();
@@ -88,6 +102,19 @@ export const AgentsView: React.FC = () => {
         }
     };
     
+    // Mock YouTube API call function
+    const searchYoutubeAPI = async (args: any) => {
+        console.log("Searching YouTube for:", args.query);
+        // In a real app, this would call the YouTube Data API.
+        return {
+            videos: [
+                { title: "The 5 NEW AI Tools That Are A BIG DEAL!", channel: "Matt Wolfe", videoId: "dQw4w9WgXcQ" },
+                { title: "Mind-Blowing AI Tools You've Never Seen!", channel: "Futurepedia", videoId: "y6120QOlsfU" },
+                { title: "These AI Tools will 10x Your Productivity", channel: "MKBHD", videoId: "a6_8-S0mD3E" },
+            ]
+        };
+    };
+
     const handleRunAgent = async (agent: Agent) => {
         if (!accessToken) {
             setError("You must be signed in to run agents.");

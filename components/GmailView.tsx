@@ -76,7 +76,9 @@ export const GmailView: React.FC = () => {
                     functionResponse: {
                         name: functionCalls[0].name,
                         response: {
-                           emails: emails.map(e => ({ from: e.from, subject: e.subject, snippet: e.snippet })),
+                           result: {
+                               emails: emails.map(e => ({ from: e.from, subject: e.subject, snippet: e.snippet })),
+                           }
                         }
                     }
                 };

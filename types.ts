@@ -13,8 +13,10 @@ export enum AppView {
     LIVE = 'live',
     VIDEO_ANALYSIS = 'video-analysis',
     VIDEO_GENERATION = 'video-generation',
+    YOUTUBE = 'youtube',
     TRIP_PLANNER = 'trip-planner',
     AGENTS = 'agents',
+    UPDATER = 'updater',
     SETTINGS = 'settings',
 }
 
@@ -130,4 +132,17 @@ export interface AgentRunLog {
     status: 'success' | 'failure';
     result: string;
     steps: string[];
+}
+
+export interface YouTubeVideo {
+    id: string;
+    snippet: {
+        title: string;
+        thumbnails: {
+            medium: {
+                url: string;
+            };
+        };
+        channelTitle: string;
+    };
 }

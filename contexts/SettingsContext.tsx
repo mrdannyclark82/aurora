@@ -69,6 +69,15 @@ const useLocalStorage = <T,>(key: string, initialValue: T): [T, (value: T | ((va
     return [storedValue, setValue];
 };
 
+const defaultAgents: Agent[] = [
+    {
+        id: 'youtube_scanner',
+        name: 'AI Tool Hunter',
+        goal: "Search YouTube for new videos about 'new AI tools'. Summarize the top 3 videos and list their titles and channels. Notify me with the summary.",
+        logs: [],
+    }
+];
+
 
 export const SettingsProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
     const [useStreaming, setUseStreaming] = useLocalStorage('settings_useStreaming', true);
@@ -76,7 +85,7 @@ export const SettingsProvider: React.FC<{ children: ReactNode }> = ({ children }
     const [selectedVoice, setSelectedVoice] = useLocalStorage('settings_selectedVoice', geminiVoices[0]?.uri || '');
     const [personas, setPersonas] = useLocalStorage<Persona[]>('settings_personas', defaultPersonas);
     const [memory, setMemory] = useLocalStorage<Memory[]>('settings_memory', []);
-    const [agents, setAgents] = useLocalStorage<Agent[]>('settings_agents', []);
+    const [agents, setAgents] = useLocalStorage<Agent[]>('settings_agents', defaultAgents);
 
     const { activeWorkspace } = useWorkspace();
 

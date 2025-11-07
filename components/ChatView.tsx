@@ -19,9 +19,11 @@ import { fileToBase64 } from '../utils/fileUtils';
 import { useMobileNav } from '../contexts/MobileNavContext';
 import { MenuIcon } from './icons/MenuIcon';
 import { FeedbackButtons } from './FeedbackButtons';
+import { useWorkspace } from '../contexts/WorkspaceContext';
 
 export const ChatView: React.FC = () => {
     const { useStreaming, autoSpeak, personas } = useSettings();
+    const { activeWorkspace } = useWorkspace();
     const [messages, setMessages] = useState<ChatMessage[]>([]);
     const [input, setInput] = useState('');
     const [isLoading, setIsLoading] = useState(false);
@@ -49,39 +51,27 @@ export const ChatView: React.FC = () => {
         }
     }, [personas, activePersona]);
 
-    useEffect(() => {
-        if (!activePersona) return;
-
-        const key = `chatHistory_${activePersona.id}`;
-        const savedHistory = localStorage.getItem(key);
-        if (!savedHistory) {
-            setMessages([]);
-            return;
-        }
-
-        try {
-            const initialMessages = JSON.parse(savedHistory);
-            if (Array.isArray(initialMessages)) {
-                setMessages(initialMessages);
-            } else {
-                // Corrupted or unexpected shape - clear and fallback
-                console.warn(`Saved chat history for ${key} is not an array. Clearing corrupted data.`);
-                localStorage.removeItem(key);
-                setMessages([]);
-            }
-        } catch (err) {
-            console.error(`Failed to parse saved chat history for ${key}:`, err);
-            // Remove the corrupted stored value to avoid repeated failures
-            try { localStorage.removeItem(key); } catch (e) { /* ignore */ }
-            setMessages([]);
-        }
-    }, [activePersona]);
+    const getHistoryKey = useCallback(() => {
+        if (!activePersona || !activeWorkspace) return null;
+        return `chatHistory_${activePersona.id}_${activeWorkspace.id}`;
+    }, [activePersona, activeWorkspace]);
 
     useEffect(() => {
-        if (!activePersona) return;
-        localStorage.setItem(`chatHistory_${activePersona.id}`, JSON.stringify(messages));
+        const historyKey = getHistoryKey();
+        if (!historyKey) return;
+
+        const savedHistory = localStorage.getItem(historyKey);
+        const initialMessages = savedHistory ? JSON.parse(savedHistory) : [];
+        setMessages(initialMessages);
+    }, [activePersona, activeWorkspace, getHistoryKey]);
+
+    useEffect(() => {
+        const historyKey = getHistoryKey();
+        if (!historyKey) return;
+
+        localStorage.setItem(historyKey, JSON.stringify(messages));
         messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-    }, [messages, activePersona]);
+    }, [messages, getHistoryKey]);
 
     const handleSendMessage = async () => {
         if (!input.trim() && !image) return;
