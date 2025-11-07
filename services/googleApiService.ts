@@ -40,3 +40,7 @@ export const searchDriveFiles = async (accessToken: string, query: string, maxRe
 export const getDriveFileContent = async (accessToken: string, fileId: string, mimeType: string) => {
     return googleApiProxyFetch('getDriveFileContent', accessToken, { fileId, mimeType });
 };
+
+export const fetchYouTubeLikedVideos = async (accessToken: string, maxResults: number = 12) => {
+    return googleApiProxyFetch('fetchYouTubeLikedVideos', accessToken, { maxResults });
+};

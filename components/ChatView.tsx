@@ -19,9 +19,11 @@ import { fileToBase64 } from '../utils/fileUtils';
 import { useMobileNav } from '../contexts/MobileNavContext';
 import { MenuIcon } from './icons/MenuIcon';
 import { FeedbackButtons } from './FeedbackButtons';
+import { useWorkspace } from '../contexts/WorkspaceContext';
 
 export const ChatView: React.FC = () => {
     const { useStreaming, autoSpeak, personas } = useSettings();
+    const { activeWorkspace } = useWorkspace();
     const [messages, setMessages] = useState<ChatMessage[]>([]);
     const [input, setInput] = useState('');
     const [isLoading, setIsLoading] = useState(false);
@@ -49,19 +51,27 @@ export const ChatView: React.FC = () => {
         }
     }, [personas, activePersona]);
 
-    useEffect(() => {
-        if (!activePersona) return;
-        
-        const savedHistory = localStorage.getItem(`chatHistory_${activePersona.id}`);
-        const initialMessages = savedHistory ? JSON.parse(savedHistory) : [];
-        setMessages(initialMessages);
-    }, [activePersona]);
+    const getHistoryKey = useCallback(() => {
+        if (!activePersona || !activeWorkspace) return null;
+        return `chatHistory_${activePersona.id}_${activeWorkspace.id}`;
+    }, [activePersona, activeWorkspace]);
 
     useEffect(() => {
-        if (!activePersona) return;
-        localStorage.setItem(`chatHistory_${activePersona.id}`, JSON.stringify(messages));
+        const historyKey = getHistoryKey();
+        if (!historyKey) return;
+        
+        const savedHistory = localStorage.getItem(historyKey);
+        const initialMessages = savedHistory ? JSON.parse(savedHistory) : [];
+        setMessages(initialMessages);
+    }, [activePersona, activeWorkspace, getHistoryKey]);
+
+    useEffect(() => {
+        const historyKey = getHistoryKey();
+        if (!historyKey) return;
+
+        localStorage.setItem(historyKey, JSON.stringify(messages));
         messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-    }, [messages, activePersona]);
+    }, [messages, getHistoryKey]);
 
     const handleSendMessage = async () => {
         if (!input.trim() && !image) return;

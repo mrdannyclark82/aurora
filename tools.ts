@@ -15,6 +15,8 @@ import { VideoIcon } from './components/icons/VideoIcon';
 import { FilmIcon } from './components/icons/FilmIcon';
 import { ToolboxIcon } from './components/icons/ToolboxIcon';
 import { CpuChipIcon } from './components/icons/CpuChipIcon';
+import { YouTubeIcon } from './components/icons/YouTubeIcon';
+import { CodeBracketsIcon } from './components/icons/CodeBracketsIcon';
 
 export const tools: ToolDefinition[] = [
     {
@@ -106,6 +108,14 @@ export const tools: ToolDefinition[] = [
         authRequired: false,
     },
     {
+        id: AppView.YOUTUBE,
+        name: 'YouTube Studio',
+        component: lazy(() => import('./components/YouTubeView').then(module => ({ default: module.YouTubeView }))),
+        icon: YouTubeIcon,
+        category: ToolCategory.MEDIA,
+        authRequired: false,
+    },
+    {
         id: AppView.TRIP_PLANNER,
         name: 'Trip Planner',
         component: lazy(() => import('./components/TripPlannerView').then(module => ({ default: module.TripPlannerView }))),
@@ -120,5 +130,13 @@ export const tools: ToolDefinition[] = [
         icon: CpuChipIcon,
         category: ToolCategory.EXPERIMENTAL,
         authRequired: true,
+    },
+    {
+        id: AppView.UPDATER,
+        name: 'Aura Updater',
+        component: lazy(() => import('./components/UpdaterView').then(module => ({ default: module.UpdaterView }))),
+        icon: CodeBracketsIcon,
+        category: ToolCategory.EXPERIMENTAL,
+        authRequired: false,
     }
 ];

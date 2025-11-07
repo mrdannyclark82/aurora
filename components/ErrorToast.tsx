@@ -22,7 +22,7 @@ export const ErrorToast: React.FC = () => {
   return (
     <div
       role="alert"
-      className="fixed bottom-5 right-5 z-50 w-full max-w-sm p-4 rounded-lg bg-red-500 text-white shadow-lg animate-pulse"
+      className="fixed bottom-5 right-5 z-50 w-full max-w-sm p-4 rounded-lg bg-red-500 text-white shadow-lg animate-fade-in"
     >
       <div className="flex items-start">
         <div className="flex-1 text-sm font-medium">

@@ -35,6 +35,10 @@ export const generateText = (prompt: string, modelName: string = 'gemini-2.5-fla
     return proxyFetch('generateText', { prompt, modelName });
 };
 
+export const getYoutubeTranscript = (videoId: string): Promise<{ transcript: string }> => {
+    return proxyFetch('getYoutubeTranscript', { videoId });
+};
+
 export const generateSearchResponse = (query: string): Promise<GenerateContentResponse> => {
     return proxyFetch('generateSearch', { query });
 };
@@ -112,4 +116,8 @@ export const runAgent = (goal: string, accessToken: string): Promise<any> => {
             goal
         }),
     }).then(res => res.json());
+};
+
+export const proposeUpdate = (prompt: string, sourceFiles: Record<string, string>): Promise<any> => {
+    return proxyFetch('proposeUpdate', { prompt, sourceFiles });
 };
