@@ -8,9 +8,9 @@ import { proposeUpdate } from '../services/geminiService';
 import { CodeBracketsIcon } from './icons/CodeBracketsIcon';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
-// @ts-ignore
 import { createTwoFilesPatch } from 'diff';
-import { parsePatch, Diff } from 'react-diff-view';
+import { parseDiff, Diff, Hunk } from 'react-diff-view';
+import type { FileData } from 'react-diff-view';
 import 'react-diff-view/style/index.css';
 
 
@@ -673,10 +673,21 @@ export const UpdaterView: React.FC = () => {
         return proposal.changes.map(change => {
             const oldContent = files[change.file] || '';
             const patch = createTwoFilesPatch(change.file, change.file, oldContent, change.content, '', '', { context: 3 });
+            // react-diff-view's parseDiff (backed by gitdiff-parser) expects git-style
+            // unified diff text. createTwoFilesPatch emits an "Index:" line and a "===="
+            // separator instead of a "diff --git" header, so normalise it first.
+            const body = patch
+                .split('\n')
+                .filter(line => !line.startsWith('Index: ') && !/^=+$/.test(line))
+                .join('\n');
+            const path = change.file.replace(/^\//, '');
+            const parsedFiles: FileData[] = parseDiff(`diff --git a/${path} b/${path}\n${body}`);
+            const file = parsedFiles[0];
             return {
                 ...change,
-                parsed: parsePatch(patch)
-            }
+                diffType: (oldContent ? 'modify' : 'add') as 'modify' | 'add',
+                hunks: file?.hunks ?? [],
+            };
         });
     }, [proposal]);
 
@@ -712,7 +723,13 @@ export const UpdaterView: React.FC = () => {
                                 {diffs.map((diff, i) => (
                                     <div key={i} className="border border-border rounded-lg overflow-hidden">
                                         <div className="bg-primary p-2 px-4 text-sm font-mono text-text-secondary border-b border-border">{diff.file}</div>
-                                        <Diff viewType="split" diffType="modify" hunks={diff.parsed[0]?.hunks || []} />
+                                        {diff.hunks.length > 0 ? (
+                                            <Diff viewType="split" diffType={diff.diffType} hunks={diff.hunks}>
+                                                {hunks => hunks.map(hunk => <Hunk key={hunk.content} hunk={hunk} />)}
+                                            </Diff>
+                                        ) : (
+                                            <p className="p-4 text-sm text-text-secondary">No changes.</p>
+                                        )}
                                     </div>
                                 ))}
                             </div>
