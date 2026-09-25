@@ -33,6 +33,9 @@ export const VideoGenerationView: React.FC = () => {
             if (window.aistudio && typeof window.aistudio.hasSelectedApiKey === 'function') {
                 const keyStatus = await window.aistudio.hasSelectedApiKey();
                 setHasApiKey(keyStatus);
+            } else {
+                // Outside AI Studio the Gemini key lives on the server (/api/proxy), so no key selection is needed.
+                setHasApiKey(true);
             }
         };
         checkApiKey();
