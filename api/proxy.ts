@@ -10,7 +10,12 @@
  * Errors are always JSON: { error: <machine code>, message: <human text> }.
  *
  * Env vars (server-side only, never exposed to the browser):
- *   GEMINI_API_KEY  (required for service 'gemini')
+ *   GEMINI_API_KEY   (required for service 'gemini')
+ *   ALLOWED_ORIGINS  (optional, comma-separated extra origins allowed to call this endpoint)
+ *   VERCEL_URL       (set by Vercel; the deployment's own host is always allowed)
+ *
+ * Origin check: every request must carry an Origin (or Referer) from an allowed site,
+ * otherwise it is rejected with 403 { error: 'forbidden-origin' }.
  */
 import { GoogleGenAI, GenerateVideosOperation } from '@google/genai';
 import type { Content, GenerateContentResponse, Part, Tool } from '@google/genai';
@@ -69,7 +74,25 @@ const GOOGLE_ACTIONS = [
 
 export default async function handler(req: ProxyRequest, res: ProxyResponse) {
     res.setHeader('Cache-Control', 'no-store');
+    res.setHeader('Vary', 'Origin');
     try {
+        const origin = requestOrigin(req);
+        if (!origin || !isAllowedOrigin(origin)) {
+            throw new HttpError(403, 'forbidden-origin', origin
+                ? `Origin ${origin} is not allowed to call /api/proxy.`
+                : 'Requests to /api/proxy must include an Origin or Referer header from an allowed site.');
+        }
+        res.setHeader('Access-Control-Allow-Origin', origin);
+
+        if (req.method === 'OPTIONS') {
+            // CORS preflight from an allowed origin.
+            res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
+            res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+            res.setHeader('Access-Control-Max-Age', '600');
+            res.status(204);
+            return res.end();
+        }
+
         if (req.method !== 'POST') {
             res.setHeader('Allow', 'POST');
             throw new HttpError(405, 'method-not-allowed', 'Only POST is supported on /api/proxy.');
@@ -98,6 +121,49 @@ export default async function handler(req: ProxyRequest, res: ProxyResponse) {
     } catch (err) {
         return sendError(res, err);
     }
+}
+
+// ---------------------------------------------------------------------------
+// Origin allow-list
+// ---------------------------------------------------------------------------
+
+const DEFAULT_ALLOWED_ORIGINS = [
+    'https://aurora-sigma-indol.vercel.app',
+    'https://aurora-danny-clarks-projects.vercel.app',
+    'https://aurora-git-main-danny-clarks-projects.vercel.app',
+    'https://aurora-9sh2.vercel.app',
+    'http://localhost:3000',
+    'http://localhost:5173',
+];
+// Preview deployments of this project, e.g. https://aurora-abc123-danny-clarks-projects.vercel.app
+const PREVIEW_ORIGIN_RE = /^https:\/\/aurora-[a-z0-9-]+-danny-clarks-projects\.vercel\.app$/;
+
+function header(req: ProxyRequest, name: string): string | undefined {
+    const v = req.headers[name.toLowerCase()];
+    return Array.isArray(v) ? v[0] : v;
+}
+
+/** Origin header, falling back to the origin of the Referer. Returns null if neither is usable. */
+function requestOrigin(req: ProxyRequest): string | null {
+    const origin = header(req, 'origin');
+    if (origin && origin !== 'null') return origin.replace(/\/+$/, '').toLowerCase();
+    const referer = header(req, 'referer');
+    if (referer) {
+        try { return new URL(referer).origin.toLowerCase(); } catch { /* invalid referer */ }
+    }
+    return null;
+}
+
+function isAllowedOrigin(origin: string): boolean {
+    if (DEFAULT_ALLOWED_ORIGINS.includes(origin) || PREVIEW_ORIGIN_RE.test(origin)) return true;
+    const extra = (process.env.ALLOWED_ORIGINS || '')
+        .split(',')
+        .map(o => o.trim().replace(/\/+$/, '').toLowerCase())
+        .filter(Boolean);
+    if (extra.includes(origin)) return true;
+    const vercelUrl = process.env.VERCEL_URL;
+    if (vercelUrl && origin === `https://${vercelUrl.replace(/^https?:\/\//, '').replace(/\/+$/, '').toLowerCase()}`) return true;
+    return false;
 }
 
 function parseBody(raw: unknown): Body {
