@@ -535,7 +535,12 @@ export function applyProposedEdits(
         }
 
         if (edits.length === 0) {
-            throw new HttpError(502, 'invalid-model-output', `${existing} needs at least one exact edit. Full-file rewrites time out.`);
+            if (typeof change.content !== 'string' || !change.content.trim() || change.content.length > 32_000) {
+                throw new HttpError(502, 'invalid-model-output', `${existing} needs at least one exact edit, or the full new file.`);
+            }
+            working.set(existing, change.content);
+            applied.push({ file: existing, description, content: change.content });
+            continue;
         }
         let next = working.get(existing) ?? '';
         for (const edit of edits) {

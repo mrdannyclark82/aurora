@@ -60,13 +60,18 @@ describe('applyProposedEdits', () => {
         }])).toThrow(/appears 2 times/);
     });
 
-    it('rejects a full-file rewrite of an existing file', () => {
-        expect(() => applyProposedEdits(sources, [{
+    it('accepts a full-file rewrite when the model already returned the new text', () => {
+        const changes = applyProposedEdits(sources, [{
             file: '/App.tsx',
             description: 'rewrite',
             edits: [],
             content: 'entire new file',
-        }])).toThrow(/Full-file rewrites time out/);
+        }]);
+        expect(changes).toEqual([{
+            file: '/App.tsx',
+            description: 'rewrite',
+            content: 'entire new file',
+        }]);
     });
 
     it('creates a new file from content', () => {
