@@ -51,6 +51,7 @@ export const UpdaterView: React.FC = () => {
     const [loadingMessage, setLoadingMessage] = useState(loadingMessages[0]);
     const [proposal, setProposal] = useState<UpdateProposal | null>(null);
     const [applied, setApplied] = useState<AppliedUpdate | null>(null);
+    const [isRecursive, setIsRecursive] = useState(false);
     const { toggleMobileNav } = useMobileNav();
 
     useEffect(() => {
@@ -75,7 +76,8 @@ export const UpdaterView: React.FC = () => {
         setApplied(null);
         setLoadingMessage(loadingMessages[0]);
         try {
-            const response = await proposeUpdate(prompt);
+            const enhancedPrompt = isRecursive ? `${prompt} (Perform a thorough, recursive proactive enhancement across all relevant files and subsystems to fully realize this goal).` : prompt;
+            const response = await proposeUpdate(enhancedPrompt);
             if (!response.plan || !response.changes) {
                 throw new Error("The AI returned an invalid response structure. Please try rephrasing your request.");
             }
@@ -208,6 +210,18 @@ export const UpdaterView: React.FC = () => {
                                 placeholder="e.g., Add a button to the Chat view that clears the conversation history."
                                 className="w-full h-24 bg-primary border border-border rounded-lg p-3 text-text-primary focus:outline-none focus:ring-2 focus:ring-accent resize-none"
                             />
+                            <div className="flex items-center gap-2">
+                                <input
+                                    type="checkbox"
+                                    id="recursive"
+                                    checked={isRecursive}
+                                    onChange={(e) => setIsRecursive(e.target.checked)}
+                                    className="rounded bg-primary border-border text-accent focus:ring-accent"
+                                />
+                                <label htmlFor="recursive" className="text-sm text-text-secondary cursor-pointer">
+                                    Enable recursive proactive enhancements (multi-file deep refactoring)
+                                </label>
+                            </div>
                             <button
                                 onClick={handleProposeUpdate}
                                 disabled={!prompt.trim()}
