@@ -5,18 +5,27 @@ export const ScouterAgent: React.FC = () => {
   const [query, setQuery] = useState('');
   const [results, setResults] = useState<string[]>([]);
   const [loading, setLoading] = useState(false);
+  const [isBackground, setIsBackground] = useState(false);
+  const [backgroundJobId, setBackgroundJobId] = useState<string | null>(null);
 
   const handleSearch = () => {
     if (!query.trim()) return;
     setLoading(true);
-    setTimeout(() => {
-      setResults([
-        `Scouted AI Tech: ${query} Integration v2.4 (Optimized UX)`,
-        `Recommended Model: Aura-Max-Pro (Latency: 120ms)`,
-        `Advanced Pattern: Autonomous Agentic RAG with Stream-UI`
-      ]);
-      setLoading(false);
-    }, 800);
+    if (isBackground) {
+      setTimeout(() => {
+        setBackgroundJobId(`job_${Math.random().toString(36).substring(2, 9)}`);
+        setLoading(false);
+      }, 600);
+    } else {
+      setTimeout(() => {
+        setResults([
+          `Scouted AI Tech: ${query} Integration v2.4 (Optimized UX)`,
+          `Recommended Model: Aura-Max-Pro (Latency: 120ms)`,
+          `Advanced Pattern: Autonomous Agentic RAG with Stream-UI`
+        ]);
+        setLoading(false);
+      }, 800);
+    }
   };
 
   return (
@@ -38,9 +47,26 @@ export const ScouterAgent: React.FC = () => {
           disabled={loading}
           className="px-4 py-2 bg-primary text-white rounded-lg text-sm font-medium hover:opacity-90"
         >
-          {loading ? 'Scouting...' : 'Scout'}
+          {loading ? 'Scouting...' : (isBackground ? 'Dispatch to Server' : 'Scout')}
         </button>
       </div>
+      <div className="flex items-center space-x-2 pt-1">
+        <input
+          type="checkbox"
+          id="bg-server"
+          checked={isBackground}
+          onChange={(e) => setIsBackground(e.target.checked)}
+          className="rounded border-border"
+        />
+        <label htmlFor="bg-server" className="text-xs text-text-secondary cursor-pointer">
+          Run as persistent server-side background agent
+        </label>
+      </div>
+      {backgroundJobId && (
+        <div className="p-3 bg-background border border-primary/30 rounded-lg text-xs text-primary mt-2">
+          Server-side background job dispatched! Job ID: {backgroundJobId}. Agent is running asynchronously on the server.
+        </div>
+      )}
       {results.length > 0 && (
         <div className="space-y-2 mt-4">
           {results.map((res, idx) => (
