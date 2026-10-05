@@ -37,6 +37,7 @@ const post = (body: unknown, headers: Record<string, string> = {}) =>
 
 beforeEach(() => {
     delete process.env.GEMINI_API_KEY;
+    delete process.env.AURORA_GITHUB_TOKEN;
     delete process.env.ALLOWED_ORIGINS;
     delete process.env.VERCEL_URL;
     vi.spyOn(console, 'error').mockImplementation(() => {});
@@ -143,6 +144,15 @@ describe('routing and validation', () => {
     });
     it('google actions require a Bearer token', async () =>
         expect((await post({ service: 'google', action: 'fetchCalendarEvents' })).statusCode).toBe(401));
+    it('proposeUpdate without a GitHub token -> 500', async () => {
+        const r = await post({ service: 'gemini', action: 'proposeUpdate', prompt: 'Add a button to the Chat view' });
+        expect(r.statusCode).toBe(500);
+        expect(r.body.error).toBe('missing-github-token');
+    });
+    it('applyUpdate requires the Google sign-in', async () => {
+        const r = await post({ service: 'gemini', action: 'applyUpdate', plan: 'Add a button', changes: [{ file: 'components/ChatView.tsx', content: 'x' }] });
+        expect(r.statusCode).toBe(401);
+    });
 });
 
 describe('google service (mocked fetch)', () => {

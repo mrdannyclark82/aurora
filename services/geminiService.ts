@@ -144,6 +144,31 @@ export const runAgent = async (goal: string, accessToken: string): Promise<any> 
     }
 };
 
-export const proposeUpdate = (prompt: string, sourceFiles: Record<string, string>): Promise<any> => {
-    return proxyFetch('proposeUpdate', { prompt, sourceFiles });
+export const proposeUpdate = (prompt: string): Promise<any> => {
+    return proxyFetch('proposeUpdate', { prompt });
+};
+
+export const applyUpdate = async (
+    accessToken: string,
+    proposal: { plan: string; changes: { file: string; content: string }[] },
+): Promise<{ sha: string; url: string; files: string[]; unchanged: boolean }> => {
+    const response = await fetch('/api/proxy', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${accessToken}`,
+        },
+        body: JSON.stringify({
+            service: 'gemini',
+            action: 'applyUpdate',
+            plan: proposal.plan,
+            changes: proposal.changes.map((change) => ({ file: change.file, content: change.content })),
+        }),
+    });
+    const text = await response.text();
+    const data = text ? JSON.parse(text) : {};
+    if (!response.ok) {
+        throw new Error(data?.message || 'The update could not be applied.');
+    }
+    return data;
 };
