@@ -283,6 +283,36 @@ function pickTextModel(requested: unknown): string {
     return RETIRED_TEXT_MODELS[name] ?? name;
 }
 
+// gemini-3.8-flash is the model Google names, and it 503s under load.
+// These answered while 3.8 was returning "high demand".
+const TEXT_FALLBACKS = [MODELS.text, 'gemini-3.7-flash', 'gemini-3.6-flash', 'gemini-3.5-flash'];
+const PRO_FALLBACKS = [MODELS.pro, 'gemini-3.7-flash', 'gemini-3.6-flash'];
+
+function modelChain(preferred: string, fallbacks: string[]): string[] {
+    return [preferred, ...fallbacks.filter((model) => model !== preferred)];
+}
+
+function isCapacityError(err: unknown): boolean {
+    const status = err && typeof err === 'object' && 'status' in err ? (err as { status?: unknown }).status : undefined;
+    const message = err instanceof Error ? err.message : String(err);
+    if (status === 429 || status === 503) return true;
+    return /high demand|overloaded|resource exhausted|try again later|UNAVAILABLE/i.test(message);
+}
+
+async function withModelFallback<T>(models: string[], run: (model: string) => Promise<T>): Promise<T> {
+    let last: unknown;
+    for (let i = 0; i < models.length; i++) {
+        try {
+            return await run(models[i]);
+        } catch (err) {
+            last = err;
+            if (i === models.length - 1 || !isCapacityError(err)) throw err;
+            console.warn(`[api/proxy] ${models[i]} busy, trying ${models[i + 1]}`);
+        }
+    }
+    throw last;
+}
+
 interface ClientChatMessage { role?: string; text?: string; image?: { data?: string; mimeType?: string } }
 
 function buildChatRequest(body: Body) {
@@ -336,18 +366,19 @@ async function handleGemini(action: string, body: Body, req: ProxyRequest, res: 
         case 'generateText': {
             const prompt = requireString(body, 'prompt');
             const { ai } = getAi();
-            const r = await ai.models.generateContent({ model: pickTextModel(body.modelName), contents: prompt });
+            const r = await withModelFallback(modelChain(pickTextModel(body.modelName), TEXT_FALLBACKS), (model) =>
+                ai.models.generateContent({ model, contents: prompt }));
             return res.status(200).json({ text: r.text ?? '' });
         }
 
         case 'generateSearch': {
             const query = requireString(body, 'query', 10_000);
             const { ai } = getAi();
-            const r = await ai.models.generateContent({
-                model: MODELS.text,
+            const r = await withModelFallback(TEXT_FALLBACKS, (model) => ai.models.generateContent({
+                model,
                 contents: query,
                 config: { tools: [{ googleSearch: {} }] },
-            });
+            }));
             return res.status(200).json(serializeResponse(r));
         }
 
@@ -357,14 +388,14 @@ async function handleGemini(action: string, body: Body, req: ProxyRequest, res: 
             const longitude = Number(body.longitude);
             const hasLoc = Number.isFinite(latitude) && Number.isFinite(longitude);
             const { ai } = getAi();
-            const r = await ai.models.generateContent({
-                model: MODELS.text,
+            const r = await withModelFallback(TEXT_FALLBACKS, (model) => ai.models.generateContent({
+                model,
                 contents: query,
                 config: {
                     tools: [{ googleMaps: {} }],
                     ...(hasLoc ? { toolConfig: { retrievalConfig: { latLng: { latitude, longitude } } } } : {}),
                 },
-            });
+            }));
             return res.status(200).json(serializeResponse(r));
         }
 
@@ -374,10 +405,10 @@ async function handleGemini(action: string, body: Body, req: ProxyRequest, res: 
             const mimeType = requireString(body, 'mimeType', 100);
             if (!mimeType.startsWith('video/')) throw new HttpError(400, 'bad-request', 'mimeType must be a video/* type.');
             const { ai } = getAi();
-            const r = await ai.models.generateContent({
-                model: MODELS.text,
+            const r = await withModelFallback(TEXT_FALLBACKS, (model) => ai.models.generateContent({
+                model,
                 contents: [{ role: 'user', parts: [{ inlineData: { data: videoBase64, mimeType } }, { text: prompt }] }],
-            });
+            }));
             return res.status(200).json({ text: r.text ?? '' });
         }
 
@@ -470,14 +501,16 @@ async function handleGemini(action: string, body: Body, req: ProxyRequest, res: 
         case 'generateChat': {
             const request = buildChatRequest(body);
             const { ai } = getAi();
-            const r = await ai.models.generateContent(request);
+            const r = await withModelFallback(TEXT_FALLBACKS, (model) =>
+                ai.models.generateContent({ ...request, model }));
             return res.status(200).json(serializeResponse(r));
         }
 
         case 'generateChatStream': {
             const request = buildChatRequest(body);
             const { ai } = getAi();
-            const stream = await ai.models.generateContentStream(request);
+            const stream = await withModelFallback(TEXT_FALLBACKS, (model) =>
+                ai.models.generateContentStream({ ...request, model }));
             // Plain text chunks (no SSE framing): ChatView appends decoded bytes directly.
             res.status(200);
             res.setHeader('Content-Type', 'text/event-stream; charset=utf-8');
@@ -496,11 +529,11 @@ async function handleGemini(action: string, body: Body, req: ProxyRequest, res: 
             }
             const tools: Tool[] | undefined = Array.isArray(body.tools) && body.tools.length ? body.tools : undefined;
             const { ai } = getAi();
-            const r = await ai.models.generateContent({
-                model: MODELS.text,
+            const r = await withModelFallback(TEXT_FALLBACKS, (model) => ai.models.generateContent({
+                model,
                 contents: body.contents as Content[],
                 config: tools ? { tools } : undefined,
-            });
+            }));
             return res.status(200).json(serializeResponse(r));
         }
 
@@ -513,8 +546,8 @@ async function handleGemini(action: string, body: Body, req: ProxyRequest, res: 
                 .map(([path, content]) => `--- FILE: ${path} ---\n${content}`)
                 .join('\n\n');
             const { ai } = getAi();
-            const r = await ai.models.generateContent({
-                model: MODELS.pro,
+            const r = await withModelFallback(PRO_FALLBACKS, (model) => ai.models.generateContent({
+                model,
                 contents: `You are an expert React + TypeScript engineer working on the "Aura" app.\n` +
                     `Here is the current source code:\n\n${fileDump}\n\n` +
                     `User request: ${prompt}\n\n` +
@@ -556,8 +589,8 @@ async function handleGemini(action: string, body: Body, req: ProxyRequest, res: 
             // Best effort: YouTube has no public transcript API, so ask Gemini to transcribe the public video URL.
             let r: GenerateContentResponse;
             try {
-                r = await ai.models.generateContent({
-                    model: MODELS.text,
+                r = await withModelFallback(TEXT_FALLBACKS, (model) => ai.models.generateContent({
+                    model,
                     contents: [{
                         role: 'user',
                         parts: [
