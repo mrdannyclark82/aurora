@@ -19,6 +19,7 @@
  */
 import { GoogleGenAI, GenerateVideosOperation } from '@google/genai';
 import type { Content, GenerateContentResponse, Part, Tool } from '@google/genai';
+import { RepoUpdateError, commitFiles, githubClient, loadUpdateSources } from './repoUpdate';
 
 // ---------------------------------------------------------------------------
 // Minimal request/response typings (compatible with Vercel's Node runtime)
@@ -66,7 +67,7 @@ const RETIRED_TEXT_MODELS: Record<string, string> = {
 const GEMINI_ACTIONS = [
     'generateText', 'getYoutubeTranscript', 'generateSearch', 'generateMaps', 'analyzeVideo',
     'generateImage', 'generateSpeech', 'generateVideo', 'getVideosOperation', 'fetchVideo',
-    'generateChatStream', 'generateChat', 'generateWithTools', 'runAgent', 'proposeUpdate',
+    'generateChatStream', 'generateChat', 'generateWithTools', 'runAgent', 'proposeUpdate', 'applyUpdate',
 ] as const;
 
 const GOOGLE_ACTIONS = [
@@ -255,6 +256,41 @@ function bearerToken(req: ProxyRequest): string {
         throw new HttpError(401, 'missing-access-token', 'Missing Google access token. Please sign in with Google.');
     }
     return m[1].trim();
+}
+
+function githubToken(): string {
+    const token = process.env.AURORA_GITHUB_TOKEN;
+    if (!token?.trim()) {
+        throw new HttpError(500, 'missing-github-token', 'The updater cannot write to GitHub yet.');
+    }
+    return token.trim();
+}
+
+function asHttp(err: unknown): Error {
+    if (err instanceof RepoUpdateError) return new HttpError(err.status, err.code, err.message);
+    return err instanceof Error ? err : new Error(String(err));
+}
+
+const DEFAULT_UPDATER_EMAILS = ['mrdannyclark82@gmail.com'];
+
+async function assertUpdater(req: ProxyRequest): Promise<void> {
+    const token = bearerToken(req);
+    const response = await fetch('https://www.googleapis.com/oauth2/v3/userinfo', {
+        headers: { Authorization: `Bearer ${token}` },
+        signal: AbortSignal.timeout(10_000),
+    });
+    if (!response.ok) {
+        throw new HttpError(401, 'missing-access-token', 'Sign in with Google again, then apply the update.');
+    }
+    const info = await response.json() as { email?: unknown };
+    const email = typeof info.email === 'string' ? info.email.toLowerCase() : '';
+    const allowed = (process.env.AURORA_UPDATER_EMAILS || DEFAULT_UPDATER_EMAILS.join(','))
+        .split(',')
+        .map((item) => item.trim().toLowerCase())
+        .filter(Boolean);
+    if (!email || !allowed.includes(email)) {
+        throw new HttpError(403, 'forbidden', 'This Google account cannot apply updates to Aura.');
+    }
 }
 
 let aiClient: GoogleGenAI | null = null;
@@ -810,9 +846,15 @@ async function handleGemini(action: string, body: Body, req: ProxyRequest, res: 
 
         case 'proposeUpdate': {
             const prompt = requireString(body, 'prompt', 8_000);
-            const { included, omitted } = selectUpdateSources(body.sourceFiles, prompt, UPDATE_SOURCE_BUDGET, 1);
+            let included: { path: string; content: string }[];
+            let omitted: string[];
+            try {
+                ({ included, omitted } = await loadUpdateSources(githubClient(githubToken()), prompt));
+            } catch (err) {
+                throw asHttp(err);
+            }
             if (included.length === 0) {
-                throw new HttpError(400, 'bad-request', 'No source files were small enough to include with this update.');
+                throw new HttpError(400, 'bad-request', 'Name the screen you want changed. No source file matched that request.');
             }
             const { ai } = getAi();
             const r = await generateUpdate(ai, buildUpdatePrompt(prompt, included, omitted));
@@ -825,8 +867,31 @@ async function handleGemini(action: string, body: Body, req: ProxyRequest, res: 
             if (!plan) {
                 throw new HttpError(502, 'invalid-model-output', 'The model did not return an implementation plan.');
             }
-            const changes = applyProposedEdits(included, parsed.changes);
+            const changes = applyProposedEdits(included, parsed.changes).map((change) => ({
+                ...change,
+                before: included.find((file) => file.path === change.file)?.content ?? '',
+            }));
             return res.status(200).json({ plan: plan.slice(0, 8_000), changes });
+        }
+
+        case 'applyUpdate': {
+            await assertUpdater(req);
+            const plan = requireString(body, 'plan', 8_000);
+            if (!Array.isArray(body.changes) || body.changes.length === 0) {
+                throw new HttpError(400, 'bad-request', 'There are no file changes to apply.');
+            }
+            const files = body.changes.map((change: { file?: unknown; content?: unknown }) => {
+                if (!change || typeof change.file !== 'string' || typeof change.content !== 'string') {
+                    throw new HttpError(400, 'bad-request', 'Each change needs a file and its new content.');
+                }
+                return { path: change.file, content: change.content };
+            });
+            try {
+                const result = await commitFiles(githubClient(githubToken()), files, plan);
+                return res.status(200).json(result);
+            } catch (err) {
+                throw asHttp(err);
+            }
         }
 
         case 'getYoutubeTranscript': {
