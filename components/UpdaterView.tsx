@@ -222,13 +222,25 @@ export const UpdaterView: React.FC = () => {
                                     Enable recursive proactive enhancements (multi-file deep refactoring)
                                 </label>
                             </div>
-                            <button
-                                onClick={handleProposeUpdate}
-                                disabled={!prompt.trim()}
-                                className="w-full p-3 rounded-lg bg-accent text-white disabled:opacity-50 hover:bg-blue-500 transition-colors"
-                            >
-                                Propose Update
-                            </button>
+                            <div className="flex gap-3">
+                                <button
+                                    onClick={handleProposeUpdate}
+                                    disabled={!prompt.trim()}
+                                    className="flex-1 p-3 rounded-lg bg-accent text-white disabled:opacity-50 hover:bg-blue-500 transition-colors"
+                                >
+                                    Propose Update
+                                </button>
+                                <button
+                                    onClick={() => {
+                                        setPrompt("Scouter Agent: Search the web/knowledge base for the latest relevant AI technologies, models, and UX patterns, and propose a comprehensive upgrade to integrate them into Aura.");
+                                        setIsRecursive(true);
+                                    }}
+                                    className="px-4 py-3 rounded-lg bg-secondary border border-border text-text-primary hover:bg-border transition-colors flex items-center gap-2"
+                                    title="Run Scouter Agent to find new AI tech"
+                                >
+                                    <span>🤖 Scouter Agent</span>
+                                </button>
+                            </div>
                         </div>
                     )}
                 </div>
