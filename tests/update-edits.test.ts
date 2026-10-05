@@ -19,6 +19,15 @@ describe('selectUpdateSources', () => {
         expect(picked.included.every((file) => !file.content.endsWith('…'))).toBe(true);
     });
 
+    it('sends only the best matching file', () => {
+        const picked = selectUpdateSources({
+            '/App.tsx': 'export const title = "Aura";',
+            '/components/ChatView.tsx': 'export function Chat() { return "history"; }',
+        }, 'add a button that clears chat history');
+        expect(picked.included.map((file) => file.path)).toEqual(['/components/ChatView.tsx']);
+        expect(picked.omitted).toEqual(['/App.tsx']);
+    });
+
     it('drops a single file that is larger than the whole budget', () => {
         const picked = selectUpdateSources({ '/App.tsx': 'a'.repeat(50) }, 'anything', 20);
         expect(picked.included).toEqual([]);

@@ -288,12 +288,12 @@ function pickTextModel(requested: unknown): string {
 const TEXT_FALLBACKS = [MODELS.text, 'gemini-3.7-flash', 'gemini-3.6-flash', 'gemini-3.5-flash'];
 
 // Self-update cannot start on gemini-3.1-pro-preview. That model either 503s or
-// holds the function until Vercel kills it at 60s, so the fallback never runs.
-// These flash ids answered during the same capacity spike. Each attempt has its
-// own deadline so one hang cannot consume the whole request.
-const UPDATE_MODELS = ['gemini-3.5-flash', 'gemini-3.6-flash', 'gemini-3-flash-preview'] as const;
-const UPDATE_ATTEMPT_MS = 20_000;
-const UPDATE_BUDGET_MS = 52_000;
+// holds the function until Vercel kills it at 60s. Splitting the minute across
+// three models aborted each of them before any answer came back. One flash model
+// gets almost the whole minute. A second model runs only when the first fails fast.
+const UPDATE_MODELS = ['gemini-3.5-flash', 'gemini-3.6-flash'] as const;
+const UPDATE_ATTEMPT_MS = 48_000;
+const UPDATE_BUDGET_MS = 55_000;
 const UPDATE_SOURCE_BUDGET = 28_000;
 const UPDATE_MAX_OUTPUT_TOKENS = 4_096;
 
@@ -338,7 +338,7 @@ export interface UpdateSource {
 }
 
 /** Keep the update prompt inside the 60s function. Never slice a file in half: a partial file makes exact edits miss. */
-export function selectUpdateSources(sourceFiles: unknown, prompt: string, budget = UPDATE_SOURCE_BUDGET): { included: UpdateSource[]; omitted: string[] } {
+export function selectUpdateSources(sourceFiles: unknown, prompt: string, budget = UPDATE_SOURCE_BUDGET, maxFiles = 1): { included: UpdateSource[]; omitted: string[] } {
     const files: UpdateSource[] = [];
     if (sourceFiles && typeof sourceFiles === 'object') {
         for (const [path, content] of Object.entries(sourceFiles as Record<string, unknown>)) {
@@ -361,7 +361,7 @@ export function selectUpdateSources(sourceFiles: unknown, prompt: string, budget
     const omitted: string[] = [];
     let used = 0;
     for (const file of ranked) {
-        const tooBig = file.content.length > budget || included.length >= 8 || used + file.content.length > budget;
+        const tooBig = file.content.length > budget || included.length >= maxFiles || used + file.content.length > budget;
         if (tooBig) {
             omitted.push(file.path);
             continue;
@@ -546,7 +546,7 @@ async function generateUpdate(ai: GoogleGenAI, contents: string): Promise<Genera
     for (let i = 0; i < UPDATE_MODELS.length; i++) {
         const model = UPDATE_MODELS[i];
         const left = UPDATE_BUDGET_MS - (Date.now() - started);
-        if (left < 5_000) break;
+        if (left < 12_000) break;
         const slice = Math.min(UPDATE_ATTEMPT_MS, left);
         try {
             return await ai.models.generateContent({
@@ -562,19 +562,20 @@ async function generateUpdate(ai: GoogleGenAI, contents: string): Promise<Genera
         } catch (err) {
             last = err;
             const retryable = isCapacityError(err) || isGiveUpError(err);
-            const roomForAnother = i < UPDATE_MODELS.length - 1 && (UPDATE_BUDGET_MS - (Date.now() - started)) >= 5_000;
+            const roomForAnother = i < UPDATE_MODELS.length - 1 && (UPDATE_BUDGET_MS - (Date.now() - started)) >= 12_000;
             if (!retryable || !roomForAnother) {
                 if (isGiveUpError(err)) {
-                    throw new HttpError(504, 'update-timeout', 'The update model did not answer before the server time limit. Try a smaller change.');
+                    throw new HttpError(504, 'update-timeout', 'The update model did not answer in time. Hit Propose once more.');
                 }
                 throw err;
             }
-            console.warn(`[api/proxy] ${model} did not finish the update, trying ${UPDATE_MODELS[i + 1]}`);
+            const why = isGiveUpError(err) ? 'timed out' : 'was busy';
+            console.warn(`[api/proxy] ${model} ${why}, trying ${UPDATE_MODELS[i + 1]}`);
         }
     }
     throw last instanceof Error
         ? last
-        : new HttpError(504, 'update-timeout', 'The update model did not answer before the server time limit. Try a smaller change.');
+        : new HttpError(504, 'update-timeout', 'The update model did not answer in time. Hit Propose once more.');
 }
 
 interface ClientChatMessage { role?: string; text?: string; image?: { data?: string; mimeType?: string } }
@@ -803,7 +804,7 @@ async function handleGemini(action: string, body: Body, req: ProxyRequest, res: 
 
         case 'proposeUpdate': {
             const prompt = requireString(body, 'prompt', 8_000);
-            const { included, omitted } = selectUpdateSources(body.sourceFiles, prompt);
+            const { included, omitted } = selectUpdateSources(body.sourceFiles, prompt, UPDATE_SOURCE_BUDGET, 1);
             if (included.length === 0) {
                 throw new HttpError(400, 'bad-request', 'No source files were small enough to include with this update.');
             }
