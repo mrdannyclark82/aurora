@@ -288,10 +288,16 @@ function pickTextModel(requested: unknown): string {
 const TEXT_FALLBACKS = [MODELS.text, 'gemini-3.7-flash', 'gemini-3.6-flash', 'gemini-3.5-flash'];
 
 // Self-update cannot start on gemini-3.1-pro-preview. That model either 503s or
-// holds the function until Vercel kills it at 60s. Splitting the minute across
-// three models aborted each of them before any answer came back. One flash model
-// gets almost the whole minute. A second model runs only when the first fails fast.
-const UPDATE_MODELS = ['gemini-3.5-flash', 'gemini-3.6-flash'] as const;
+// holds the function until Vercel kills it at 60s. A 503 is fast, so walk the
+// models that have answered on this key. The first one that accepts gets the
+// rest of the minute. Do not split that minute across models that are still working.
+const UPDATE_MODELS = [
+    'gemini-3-flash-preview',
+    'gemini-flash-lite-latest',
+    'gemini-3.7-flash',
+    'gemini-3.5-flash',
+    'gemini-3.6-flash',
+] as const;
 const UPDATE_ATTEMPT_MS = 48_000;
 const UPDATE_BUDGET_MS = 55_000;
 const UPDATE_SOURCE_BUDGET = 28_000;
