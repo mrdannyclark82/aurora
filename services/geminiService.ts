@@ -49,7 +49,7 @@ const proxyFetch = async (action: string, params: object) => {
 };
 
 
-export const generateText = (prompt: string, modelName: string = 'gemini-2.5-flash'): Promise<{ text: string }> => {
+export const generateText = (prompt: string, modelName: string = 'gemini-3.8-flash'): Promise<{ text: string }> => {
     return proxyFetch('generateText', { prompt, modelName });
 };
 
