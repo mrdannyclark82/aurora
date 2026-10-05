@@ -19,7 +19,7 @@
  */
 import { GoogleGenAI, GenerateVideosOperation } from '@google/genai';
 import type { Content, GenerateContentResponse, Part, Tool } from '@google/genai';
-import { RepoUpdateError, commitFiles, githubClient, loadUpdateSources } from './repoUpdate';
+import { RepoUpdateError, commitFiles, githubClient, loadUpdateSources } from './repoUpdate.js';
 
 // ---------------------------------------------------------------------------
 // Minimal request/response typings (compatible with Vercel's Node runtime)
