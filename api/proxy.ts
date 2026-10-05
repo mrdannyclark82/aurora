@@ -286,7 +286,16 @@ function pickTextModel(requested: unknown): string {
 // gemini-3.8-flash is the model Google names, and it 503s under load.
 // These answered while 3.8 was returning "high demand".
 const TEXT_FALLBACKS = [MODELS.text, 'gemini-3.7-flash', 'gemini-3.6-flash', 'gemini-3.5-flash'];
-const PRO_FALLBACKS = [MODELS.pro, 'gemini-3.7-flash', 'gemini-3.6-flash'];
+
+// Self-update cannot start on gemini-3.1-pro-preview. That model either 503s or
+// holds the function until Vercel kills it at 60s, so the fallback never runs.
+// These flash ids answered during the same capacity spike. Each attempt has its
+// own deadline so one hang cannot consume the whole request.
+const UPDATE_MODELS = ['gemini-3.5-flash', 'gemini-3.6-flash', 'gemini-3-flash-preview'] as const;
+const UPDATE_ATTEMPT_MS = 20_000;
+const UPDATE_BUDGET_MS = 52_000;
+const UPDATE_SOURCE_BUDGET = 28_000;
+const UPDATE_MAX_OUTPUT_TOKENS = 4_096;
 
 function modelChain(preferred: string, fallbacks: string[]): string[] {
     return [preferred, ...fallbacks.filter((model) => model !== preferred)];
@@ -311,6 +320,261 @@ async function withModelFallback<T>(models: string[], run: (model: string) => Pr
         }
     }
     throw last;
+}
+
+function isGiveUpError(err: unknown): boolean {
+    if (!err || typeof err !== 'object') return false;
+    const name = 'name' in err ? String((err as { name?: unknown }).name) : '';
+    if (name === 'AbortError' || name === 'TimeoutError') return true;
+    const status = 'status' in err ? (err as { status?: unknown }).status : undefined;
+    if (status === 504) return true;
+    const message = err instanceof Error ? err.message : String(err);
+    return /aborted|AbortError|TimeoutError|operation was aborted/i.test(message);
+}
+
+export interface UpdateSource {
+    path: string;
+    content: string;
+}
+
+/** Keep the update prompt inside the 60s function. Never slice a file in half: a partial file makes exact edits miss. */
+export function selectUpdateSources(sourceFiles: unknown, prompt: string, budget = UPDATE_SOURCE_BUDGET): { included: UpdateSource[]; omitted: string[] } {
+    const files: UpdateSource[] = [];
+    if (sourceFiles && typeof sourceFiles === 'object') {
+        for (const [path, content] of Object.entries(sourceFiles as Record<string, unknown>)) {
+            if (typeof content !== 'string' || path.length === 0 || path.length > 180 || path.includes('..')) continue;
+            files.push({ path, content });
+        }
+    }
+    const tokens = prompt.toLowerCase().split(/[^a-z0-9]+/).filter((token) => token.length > 3);
+    const score = (file: UpdateSource) => {
+        const name = file.path.toLowerCase();
+        const body = file.content.toLowerCase();
+        let hits = 0;
+        for (const token of tokens) {
+            if (name.includes(token) || body.includes(token)) hits++;
+        }
+        return hits;
+    };
+    const ranked = [...files].sort((a, b) => score(b) - score(a) || a.content.length - b.content.length);
+    const included: UpdateSource[] = [];
+    const omitted: string[] = [];
+    let used = 0;
+    for (const file of ranked) {
+        const tooBig = file.content.length > budget || included.length >= 8 || used + file.content.length > budget;
+        if (tooBig) {
+            omitted.push(file.path);
+            continue;
+        }
+        included.push(file);
+        used += file.content.length;
+    }
+    return { included, omitted };
+}
+
+export function buildUpdatePrompt(prompt: string, included: UpdateSource[], omitted: string[]): string {
+    const fileDump = included
+        .map((file) => `--- FILE: ${file.path} ---\n${file.content}`)
+        .join('\n\n');
+    const omittedLine = omitted.length
+        ? `Files not included (do not edit these; you do not have their contents): ${omitted.join(', ')}\n\n`
+        : '';
+    return `You are an expert React + TypeScript engineer editing the "Aura" app.\n` +
+        `Make the smallest exact edit that satisfies the request.\n` +
+        `Return JSON with a short markdown "plan" and "changes".\n` +
+        `Each change is { "file", "description", "edits": [{ "find", "replace" }] }.\n` +
+        `Copy "find" exactly from the file. It must occur once. Keep each find under 40 lines.\n` +
+        `Do not return the full file. Apply edits in order; later finds see earlier replacements.\n` +
+        `To create a file that is not listed, use an empty edits array and a "content" string.\n` +
+        `Change at most 3 files.\n\n` +
+        omittedLine +
+        `Current source:\n\n${fileDump}\n\n` +
+        `User request: ${prompt}`;
+}
+
+const UPDATE_RESPONSE_SCHEMA = {
+    type: 'OBJECT',
+    properties: {
+        plan: { type: 'STRING' },
+        changes: {
+            type: 'ARRAY',
+            items: {
+                type: 'OBJECT',
+                properties: {
+                    file: { type: 'STRING' },
+                    description: { type: 'STRING' },
+                    content: { type: 'STRING' },
+                    edits: {
+                        type: 'ARRAY',
+                        items: {
+                            type: 'OBJECT',
+                            properties: {
+                                find: { type: 'STRING' },
+                                replace: { type: 'STRING' },
+                            },
+                            required: ['find', 'replace'],
+                        },
+                    },
+                },
+                required: ['file', 'description', 'edits'],
+            },
+        },
+    },
+    required: ['plan', 'changes'],
+};
+
+function countOccurrences(haystack: string, needle: string): number {
+    if (!needle) return 0;
+    let count = 0;
+    let from = 0;
+    while (from <= haystack.length) {
+        const at = haystack.indexOf(needle, from);
+        if (at < 0) return count;
+        count++;
+        from = at + needle.length;
+    }
+    return count;
+}
+
+function resolveSourcePath(requested: string, sources: Map<string, string>): string | null {
+    if (sources.has(requested)) return requested;
+    const withSlash = requested.startsWith('/') ? requested : `/${requested}`;
+    const withoutSlash = requested.replace(/^\/+/, '');
+    if (sources.has(withSlash)) return withSlash;
+    if (sources.has(withoutSlash)) return withoutSlash;
+    const hits = [...sources.keys()].filter((path) => path === withSlash || path.endsWith(`/${withoutSlash}`));
+    return hits.length === 1 ? hits[0] : null;
+}
+
+export function applyProposedEdits(
+    sources: UpdateSource[],
+    rawChanges: unknown,
+): { file: string; description: string; content: string }[] {
+    if (!Array.isArray(rawChanges) || rawChanges.length === 0) {
+        throw new HttpError(502, 'invalid-model-output', 'The model did not propose any file changes.');
+    }
+    if (rawChanges.length > 4) {
+        throw new HttpError(502, 'invalid-model-output', 'The model proposed too many files for one update. Ask for a smaller change.');
+    }
+    const working = new Map(sources.map((source) => [source.path, source.content]));
+    const applied: { file: string; description: string; content: string }[] = [];
+
+    for (const raw of rawChanges) {
+        if (!raw || typeof raw !== 'object') {
+            throw new HttpError(502, 'invalid-model-output', 'A proposed change was not an object.');
+        }
+        const change = raw as { file?: unknown; description?: unknown; edits?: unknown; content?: unknown };
+        const requested = typeof change.file === 'string' ? change.file.trim() : '';
+        if (!requested || requested.includes('..') || requested.length > 180) {
+            throw new HttpError(502, 'invalid-model-output', 'A proposed change named a file that cannot be edited.');
+        }
+        const description = typeof change.description === 'string' && change.description.trim()
+            ? change.description.trim().slice(0, 500)
+            : 'Updated.';
+        const existing = resolveSourcePath(requested, working);
+        const edits = Array.isArray(change.edits) ? change.edits : null;
+        if (!edits || edits.length > 6) {
+            throw new HttpError(502, 'invalid-model-output', `The change for ${requested} did not include a short list of edits.`);
+        }
+
+        if (!existing) {
+            if (edits.length > 0 || typeof change.content !== 'string' || !change.content.trim()) {
+                throw new HttpError(502, 'invalid-model-output', `${requested} is not in the source sent with this request. New files need content and no edits.`);
+            }
+            if (change.content.length > 12_000) {
+                throw new HttpError(502, 'invalid-model-output', `${requested} is too large to create in one update.`);
+            }
+            const path = requested.startsWith('/') ? requested : `/${requested}`;
+            working.set(path, change.content);
+            applied.push({ file: path, description, content: change.content });
+            continue;
+        }
+
+        if (edits.length === 0) {
+            throw new HttpError(502, 'invalid-model-output', `${existing} needs at least one exact edit. Full-file rewrites time out.`);
+        }
+        let next = working.get(existing) ?? '';
+        for (const edit of edits) {
+            if (!edit || typeof edit !== 'object') {
+                throw new HttpError(502, 'invalid-model-output', `An edit for ${existing} was empty.`);
+            }
+            const find = (edit as { find?: unknown }).find;
+            const replace = (edit as { replace?: unknown }).replace;
+            if (typeof find !== 'string' || !find.trim() || find.length > 2_500) {
+                throw new HttpError(502, 'invalid-model-output', `An edit for ${existing} was missing a short exact snippet.`);
+            }
+            if (typeof replace !== 'string' || replace.length > 6_000) {
+                throw new HttpError(502, 'invalid-model-output', `The replacement for ${existing} is too large. Ask for a smaller change.`);
+            }
+            const hits = countOccurrences(next, find);
+            if (hits !== 1) {
+                throw new HttpError(502, 'invalid-model-output',
+                    hits === 0
+                        ? `Could not find that snippet in ${existing}. Try the request again.`
+                        : `That snippet appears ${hits} times in ${existing}. The edit has to match one place.`);
+            }
+            next = next.replace(find, replace);
+        }
+        working.set(existing, next);
+        applied.push({ file: existing, description, content: next });
+    }
+    return applied;
+}
+
+function parseModelJson(text: string): { plan?: unknown; changes?: unknown } {
+    const trimmed = text.trim();
+    const tryParse = (value: string) => {
+        const parsed = JSON.parse(value) as { plan?: unknown; changes?: unknown };
+        if (!parsed || typeof parsed !== 'object') throw new Error('not an object');
+        return parsed;
+    };
+    try {
+        return tryParse(trimmed);
+    } catch {
+        const start = trimmed.indexOf('{');
+        const end = trimmed.lastIndexOf('}');
+        if (start >= 0 && end > start) {
+            try { return tryParse(trimmed.slice(start, end + 1)); } catch { /* fall through */ }
+        }
+        throw new HttpError(502, 'invalid-model-output', 'The model did not return valid JSON for the update proposal.');
+    }
+}
+
+async function generateUpdate(ai: GoogleGenAI, contents: string): Promise<GenerateContentResponse> {
+    const started = Date.now();
+    let last: unknown;
+    for (let i = 0; i < UPDATE_MODELS.length; i++) {
+        const model = UPDATE_MODELS[i];
+        const left = UPDATE_BUDGET_MS - (Date.now() - started);
+        if (left < 5_000) break;
+        const slice = Math.min(UPDATE_ATTEMPT_MS, left);
+        try {
+            return await ai.models.generateContent({
+                model,
+                contents,
+                config: {
+                    abortSignal: AbortSignal.timeout(slice),
+                    maxOutputTokens: UPDATE_MAX_OUTPUT_TOKENS,
+                    responseMimeType: 'application/json',
+                    responseSchema: UPDATE_RESPONSE_SCHEMA as any,
+                },
+            });
+        } catch (err) {
+            last = err;
+            const retryable = isCapacityError(err) || isGiveUpError(err);
+            const roomForAnother = i < UPDATE_MODELS.length - 1 && (UPDATE_BUDGET_MS - (Date.now() - started)) >= 5_000;
+            if (!retryable || !roomForAnother) {
+                if (isGiveUpError(err)) {
+                    throw new HttpError(504, 'update-timeout', 'The update model did not answer before the server time limit. Try a smaller change.');
+                }
+                throw err;
+            }
+            console.warn(`[api/proxy] ${model} did not finish the update, trying ${UPDATE_MODELS[i + 1]}`);
+        }
+    }
+    throw last instanceof Error
+        ? last
+        : new HttpError(504, 'update-timeout', 'The update model did not answer before the server time limit. Try a smaller change.');
 }
 
 interface ClientChatMessage { role?: string; text?: string; image?: { data?: string; mimeType?: string } }
@@ -538,48 +802,24 @@ async function handleGemini(action: string, body: Body, req: ProxyRequest, res: 
         }
 
         case 'proposeUpdate': {
-            const prompt = requireString(body, 'prompt', 20_000);
-            const sourceFiles: Record<string, unknown> =
-                body.sourceFiles && typeof body.sourceFiles === 'object' ? body.sourceFiles : {};
-            const fileDump = Object.entries(sourceFiles)
-                .filter(([, v]) => typeof v === 'string')
-                .map(([path, content]) => `--- FILE: ${path} ---\n${content}`)
-                .join('\n\n');
-            const { ai } = getAi();
-            const r = await withModelFallback(PRO_FALLBACKS, (model) => ai.models.generateContent({
-                model,
-                contents: `You are an expert React + TypeScript engineer working on the "Aura" app.\n` +
-                    `Here is the current source code:\n\n${fileDump}\n\n` +
-                    `User request: ${prompt}\n\n` +
-                    `Respond with an implementation plan (markdown) and the complete new content of every file you change.`,
-                config: {
-                    responseMimeType: 'application/json',
-                    responseSchema: {
-                        type: 'OBJECT',
-                        properties: {
-                            plan: { type: 'STRING' },
-                            changes: {
-                                type: 'ARRAY',
-                                items: {
-                                    type: 'OBJECT',
-                                    properties: {
-                                        file: { type: 'STRING' },
-                                        description: { type: 'STRING' },
-                                        content: { type: 'STRING' },
-                                    },
-                                    required: ['file', 'description', 'content'],
-                                },
-                            },
-                        },
-                        required: ['plan', 'changes'],
-                    } as any,
-                },
-            });
-            try {
-                return res.status(200).json(JSON.parse(r.text ?? ''));
-            } catch {
-                throw new HttpError(502, 'invalid-model-output', 'The model did not return valid JSON for the update proposal.');
+            const prompt = requireString(body, 'prompt', 8_000);
+            const { included, omitted } = selectUpdateSources(body.sourceFiles, prompt);
+            if (included.length === 0) {
+                throw new HttpError(400, 'bad-request', 'No source files were small enough to include with this update.');
             }
+            const { ai } = getAi();
+            const r = await generateUpdate(ai, buildUpdatePrompt(prompt, included, omitted));
+            const finish = r.candidates?.[0]?.finishReason;
+            if (finish === 'MAX_TOKENS') {
+                throw new HttpError(502, 'invalid-model-output', 'The update was too large to finish. Ask for a smaller change.');
+            }
+            const parsed = parseModelJson(r.text ?? '');
+            const plan = typeof parsed.plan === 'string' ? parsed.plan.trim() : '';
+            if (!plan) {
+                throw new HttpError(502, 'invalid-model-output', 'The model did not return an implementation plan.');
+            }
+            const changes = applyProposedEdits(included, parsed.changes);
+            return res.status(200).json({ plan: plan.slice(0, 8_000), changes });
         }
 
         case 'getYoutubeTranscript': {
@@ -598,7 +838,7 @@ async function handleGemini(action: string, body: Body, req: ProxyRequest, res: 
                             { text: 'Produce a plain-text transcript of the spoken content of this video. Output only the transcript.' },
                         ],
                     }],
-                });
+                }));
             } catch (err) {
                 const msg = err instanceof Error ? err.message : String(err);
                 throw new HttpError(501, 'transcript-unavailable',

@@ -753,7 +753,7 @@ export const UpdaterView: React.FC = () => {
                                 <CodeBracketsIcon className="w-16 h-16 mx-auto" />
                                 <h3 className="mt-4 text-xl font-semibold">Self-Evolving Codebase</h3>
                                 <p className="mt-2 max-w-lg mx-auto">
-                                    Describe a new feature or a change you want to see in Aura. The AI will analyze its own source code and propose the necessary changes to implement it.
+                                    Describe one change you want in Aura. The proposal comes back as a small edit, so it can finish before the server time limit.
                                 </p>
                             </div>
                             <textarea
