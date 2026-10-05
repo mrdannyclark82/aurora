@@ -50,11 +50,17 @@ class HttpError extends Error {
 }
 
 const MODELS = {
-    text: 'gemini-2.5-flash',
-    pro: 'gemini-2.5-pro',
+    text: 'gemini-3.8-flash',
+    pro: 'gemini-3.1-pro-preview',
     image: 'imagen-4.0-generate-001',
     tts: 'gemini-2.5-flash-preview-tts',
     video: 'veo-3.1-fast-generate-preview',
+};
+
+// Google rejects these for new API keys and names the replacement in the error.
+const RETIRED_TEXT_MODELS: Record<string, string> = {
+    'gemini-2.5-flash': MODELS.text,
+    'gemini-2.5-pro': MODELS.pro,
 };
 
 const GEMINI_ACTIONS = [
@@ -273,7 +279,8 @@ function serializeResponse(r: GenerateContentResponse) {
 
 function pickTextModel(requested: unknown): string {
     // Only allow Gemini text models to be selected by the client.
-    return typeof requested === 'string' && /^gemini-[\w.-]+$/.test(requested) ? requested : MODELS.text;
+    const name = typeof requested === 'string' && /^gemini-[\w.-]+$/.test(requested) ? requested : MODELS.text;
+    return RETIRED_TEXT_MODELS[name] ?? name;
 }
 
 interface ClientChatMessage { role?: string; text?: string; image?: { data?: string; mimeType?: string } }

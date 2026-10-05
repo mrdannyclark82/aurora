@@ -109,7 +109,7 @@ ${transcript}
 User's Question: "${query}"
 
 Answer:`;
-            const response = await generateText(prompt, 'gemini-2.5-flash');
+            const response = await generateText(prompt, 'gemini-3.8-flash');
             setAnalysis(response.text);
         } catch (error: any) {
             setError(error.message || "Failed to analyze the video.");
