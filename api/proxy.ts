@@ -327,17 +327,19 @@ const TEXT_FALLBACKS = [MODELS.text, 'gemini-3.7-flash', 'gemini-3.6-flash', 'ge
 // holds the function until Vercel kills it at 60s. A 503 is fast, so walk the
 // models that have answered on this key. The first one that accepts gets the
 // rest of the minute. Do not split that minute across models that are still working.
+// gemini-3-flash-preview held the 11:25 propose until the function died.
+// gemini-flash-lite-latest is the one that has returned a real proposal on this key.
 const UPDATE_MODELS = [
-    'gemini-3-flash-preview',
     'gemini-flash-lite-latest',
-    'gemini-3.7-flash',
     'gemini-3.5-flash',
     'gemini-3.6-flash',
+    'gemini-3.7-flash',
+    'gemini-3-flash-preview',
 ] as const;
 const UPDATE_ATTEMPT_MS = 48_000;
 const UPDATE_BUDGET_MS = 55_000;
 const UPDATE_SOURCE_BUDGET = 28_000;
-const UPDATE_MAX_OUTPUT_TOKENS = 4_096;
+const UPDATE_MAX_OUTPUT_TOKENS = 8_192;
 
 function modelChain(preferred: string, fallbacks: string[]): string[] {
     return [preferred, ...fallbacks.filter((model) => model !== preferred)];
@@ -523,7 +525,7 @@ export function applyProposedEdits(
             if (edits.length > 0 || typeof change.content !== 'string' || !change.content.trim()) {
                 throw new HttpError(502, 'invalid-model-output', `${requested} is not in the source sent with this request. New files need content and no edits.`);
             }
-            if (change.content.length > 12_000) {
+            if (change.content.length > 32_000) {
                 throw new HttpError(502, 'invalid-model-output', `${requested} is too large to create in one update.`);
             }
             const path = requested.startsWith('/') ? requested : `/${requested}`;
@@ -545,7 +547,7 @@ export function applyProposedEdits(
             if (typeof find !== 'string' || !find.trim() || find.length > 2_500) {
                 throw new HttpError(502, 'invalid-model-output', `An edit for ${existing} was missing a short exact snippet.`);
             }
-            if (typeof replace !== 'string' || replace.length > 6_000) {
+            if (typeof replace !== 'string' || replace.length > 32_000) {
                 throw new HttpError(502, 'invalid-model-output', `The replacement for ${existing} is too large. Ask for a smaller change.`);
             }
             const hits = countOccurrences(next, find);
@@ -607,7 +609,8 @@ async function generateUpdate(ai: GoogleGenAI, contents: string): Promise<Genera
             const roomForAnother = i < UPDATE_MODELS.length - 1 && (UPDATE_BUDGET_MS - (Date.now() - started)) >= 12_000;
             if (!retryable || !roomForAnother) {
                 if (isGiveUpError(err)) {
-                    throw new HttpError(504, 'update-timeout', 'The update model did not answer in time. Hit Propose once more.');
+                    console.warn(`[api/proxy] ${model} timed out`);
+                    throw new HttpError(504, 'update-timeout', `${model} did not answer in time. Hit Propose once more.`);
                 }
                 throw err;
             }
